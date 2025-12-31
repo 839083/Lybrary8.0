@@ -1,8 +1,12 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User");
 
 const router = express.Router();
+
+/* ================= GOOGLE CLIENT ================= */
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 /* ================= SIGNUP ================= */
 router.post("/signup", async (req, res) => {
@@ -53,6 +57,13 @@ router.post("/login", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // ❗ Google users won't have password
+    if (!user.password) {
+      return res.status(400).json({
+        message: "Please login using Google",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" });
@@ -72,12 +83,51 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= GET ALL STUDENTS (NEW) ================= */
+/* ================= GOOGLE LOGIN ================= */
+router.post("/google", async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const { name, email } = ticket.getPayload();
+
+    let user = await User.findOne({ email });
+
+    // If user doesn't exist, create as STUDENT by default
+    if (!user) {
+      user = new User({
+        name,
+        email,
+        role: "student",
+        password: "", // no password for Google users
+      });
+      await user.save();
+    }
+
+    res.status(200).json({
+      message: "Google login successful",
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (error) {
+    res.status(401).json({
+      message: "Google authentication failed",
+      error: error.message,
+    });
+  }
+});
+
+/* ================= GET ALL STUDENTS ================= */
 router.get("/students", async (req, res) => {
   try {
-    const students = await User.find({ role: "student" }).select(
-      "name email"
-    );
+    const students = await User.find({
+      role: { $regex: /^student$/i },
+    }).select("name email");
 
     res.status(200).json(students);
   } catch (error) {

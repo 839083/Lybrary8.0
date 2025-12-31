@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { GoogleLogin } from "@react-oauth/google";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -7,8 +8,6 @@ const Auth = () => {
   const [isLogin, setIsLogin] = useState(false);
   const [role, setRole] = useState("student");
   const [loading, setLoading] = useState(false);
-
-  // show / hide password
   const [showPassword, setShowPassword] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -23,6 +22,7 @@ const Auth = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  /* ================= EMAIL LOGIN / SIGNUP ================= */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -34,13 +34,8 @@ const Auth = () => {
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...formData,
-          role,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...formData, role }),
       });
 
       const data = await response.json();
@@ -48,26 +43,21 @@ const Auth = () => {
       if (!response.ok) {
         alert(data.message || "Something went wrong");
       } else {
-        alert(data.message);
-
-        // ✅ SAVE USER INFO (for dashboards / future redux / localStorage)
         localStorage.setItem(
           "user",
           JSON.stringify({
             name: data.name || formData.name,
-            email: formData.email,
-            role: role,
+            email: data.email || formData.email,
+            role: data.role || role,
           })
         );
 
-        // ✅ REDIRECT BASED ON ROLE
-        if (role === "admin") {
-          navigate("/admin-dashboard");
-        } else {
-          navigate("/student-dashboard");
-        }
+        navigate(
+          (data.role || role) === "admin"
+            ? "/admin-dashboard"
+            : "/student-dashboard"
+        );
 
-        // reset form
         setFormData({
           name: "",
           email: "",
@@ -76,10 +66,45 @@ const Auth = () => {
           adminCode: "",
         });
       }
-    } catch (error) {
+    } catch {
       alert("Server not responding");
     } finally {
       setLoading(false);
+    }
+  };
+
+  /* ================= GOOGLE LOGIN ================= */
+  const handleGoogleLogin = async (credential) => {
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: credential }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "Google login failed");
+        return;
+      }
+
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          name: data.name,
+          email: data.email,
+          role: data.role,
+        })
+      );
+
+      navigate(
+        data.role === "admin"
+          ? "/admin-dashboard"
+          : "/student-dashboard"
+      );
+    } catch {
+      alert("Google login error");
     }
   };
 
@@ -129,7 +154,6 @@ const Auth = () => {
               onChange={handleChange}
             />
 
-            {/* Password */}
             <div className="password-box">
               <input
                 type={showPassword ? "text" : "password"}
@@ -174,7 +198,17 @@ const Auth = () => {
             </button>
           </form>
 
-          {/* Toggle */}
+          {/* GOOGLE LOGIN (ONLY FOR LOGIN MODE) */}
+          {isLogin && (
+            <div style={{ marginTop: "15px", textAlign: "center" }}>
+              <p>or</p>
+              <GoogleLogin
+                onSuccess={(res) => handleGoogleLogin(res.credential)}
+                onError={() => alert("Google Login Failed")}
+              />
+            </div>
+          )}
+
           <p className="toggle-text">
             {isLogin ? "Don't have an account?" : "Already have an account?"}
             <span onClick={() => setIsLogin(!isLogin)}>
@@ -184,7 +218,7 @@ const Auth = () => {
         </div>
       </div>
 
-      {/* CSS */}
+      {/* CSS (UNCHANGED) */}
       <style>{`
         * {
           box-sizing: border-box;
